@@ -1,0 +1,20 @@
+#!/bin/bash
+
+#HOST_IP=`wget -q -O - http://169.254.169.254/latest/meta-data/local-ipv4`
+#LAUNCH_INDEX=`wget -q -O - http://169.254.169.254/latest/meta-data/ami-launch-index`
+RESERVATION_ID=`wget -q -O - http://169.254.169.254/latest/meta-data/reservation-id`
+HOST_IP=10.11.12.32
+LAUNCH_INDEX=0
+#ec2din|grep 'INSTANCE'|awk -v ip4=$HOST_IP -v launch_index=$LAUNCH_INDEX 'BEGIN {print "127.0.0.1 localhost"; print "127.0.0.1 node" launch_index;}{for(i=1; i <= NR; i++) if($8!=launch_index) {print $15" node"$8;}}' > /tmp/hosts.test
+
+generate_hosts() {
+    local RESERVATION_ID=$1
+    local HOST_IP=$2
+    local LAUNCH_INDEX=$3
+    local SCRATCH=`mktemp`
+
+    # collect instances in our reservation
+    # by collecting the lines starting w/ our RESERVATION_ID and 
+    # the next occurance of the token 'RESERVATION'
+    ec2din --show-empty-fields|sed -n '/$RESERVATION_ID/,/RESERVATION/p'|grep INSTANCE |awk -v ip4=$HOST_IP -v launch_index=$LAUNCH_INDEX 'BEGIN {print "127.0.0.1 localhost"; print "127.0.0.1 node" launch_index;}{for(i=1; i <= NR; i++) if($8!=launch_index) {print $15" node"$8;}}' > /tmp/hosts.test
+}
