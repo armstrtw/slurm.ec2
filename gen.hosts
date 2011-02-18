@@ -1,6 +1,6 @@
 #!/bin/bash
 
-get_host_for_reservation() {
+get_hosts_for_reservation() {
     local RESERVATION_ID=$1
     local OUT_FILE=$2
 
@@ -10,28 +10,38 @@ get_host_for_reservation() {
     ec2din --show-empty-fields|sed -n '/$RESERVATION_ID/,/RESERVATION/p'|grep INSTANCE > $OUT_FILE
 }
 
-generate_hosts() {
+get_max_launch_index() {
+    local RESERVATION_ID=$1
+    local ans
+    local SCRATCH=`mktemp`
+    get_hosts_for_reservation $RESERVATION_ID $SCRATCH
+    NC=`awk 'BEGIN { mv = 0 }{for(i=1; i <= NR; i++) if($1>mv) { mv = $1 } } END { print mv }' $SCRATCH`
+    rm $SCRATCH
+    echo $NC
+}
+
+generate_hosts_file() {
     local RESERVATION_ID=$1
     local HOST_IP=$2
     local LAUNCH_INDEX=$3
     local OUT_FILE=$4
     local SCRATCH=`mktemp`
 
-    get_host_for_reservation $RESERVATION_ID $SCRATCH
+    get_hosts_for_reservation $RESERVATION_ID $SCRATCH
     cat $SCRATCH|awk -v ip4=$HOST_IP -v launch_index=$LAUNCH_INDEX 'BEGIN {print "127.0.0.1 localhost"; print "127.0.0.1 node" launch_index;}{for(i=1; i <= NR; i++) if($8!=launch_index) {print $15" node"$8;}}' > $OUT_FILE
     rm $SCRATCH
 }
 
-max_launch_index() {
+generate_slurm_node_conf_file() {
     local RESERVATION_ID=$1
-    local ans
-    local SCRATCH=`mktemp`
-    get_host_for_reservation $RESERVATION_ID $SCRATCH
-    ans=`awk 'BEGIN { mv = 0 }{for(i=1; i <= NR; i++) if($1>mv) { mv = $1 } } END { print mv }' $SCRATCH`
-    rm $SCRATCH
-    echo ans
-}
+    local OUT_FILE=$2
+    local NODE_COUNT=`get_max_launch_index $RESERVATION_ID`
+    local i
+    rm -f $OUT_FILE
 
+    echo "NodeName=node[0-$NODE_COUNT]" >> $OUT_FILE
+    echo "PartitionName=prod Nodes=node[0-$NODE_COUNT] Default=YES MaxTime=INFINITE State=UP" >> $OUT_FILE
+}
 
 #HOST_IP=`wget -q -O - http://169.254.169.254/latest/meta-data/local-ipv4`
 #LAUNCH_INDEX=`wget -q -O - http://169.254.169.254/latest/meta-data/ami-launch-index`
@@ -42,4 +52,5 @@ HOST_IP=10.11.12.32
 LAUNCH_INDEX=0
 RESERVATION_ID=r-121cd27f
 
-generate_hosts $RESERVATION_ID $HOST_IP $LAUNCH_INDEX /tmp/hosts.test
+generate_hosts_file $RESERVATION_ID $HOST_IP $LAUNCH_INDEX /tmp/hosts.test
+generate_slurm_node_conf_file $RESERVATION_ID /tmp/nodes.test
