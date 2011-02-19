@@ -52,9 +52,9 @@ generate_slurm_node_conf_file() {
     echo "PartitionName=prod Nodes=node[0-$NODE_COUNT] Default=YES MaxTime=INFINITE State=UP" >> $OUT_FILE
 }
 
-# HOST_IP=`wget -q -O - http://169.254.169.254/latest/meta-data/local-ipv4`
-# LAUNCH_INDEX=`wget -q -O - http://169.254.169.254/latest/meta-data/ami-launch-index`
-# RESERVATION_ID=`wget -q -O - http://169.254.169.254/latest/meta-data/reservation-id`
+HOST_IP=`wget -q -O - http://169.254.169.254/latest/meta-data/local-ipv4`
+LAUNCH_INDEX=`wget -q -O - http://169.254.169.254/latest/meta-data/ami-launch-index`
+RESERVATION_ID=`wget -q -O - http://169.254.169.254/latest/meta-data/reservation-id`
 
 # test values
 # HOST_IP=10.117.43.46
@@ -62,5 +62,5 @@ generate_slurm_node_conf_file() {
 # RESERVATION_ID=r-4c8d2b21
 
 generate_hosts_file $RESERVATION_ID $HOST_IP $LAUNCH_INDEX /etc/hosts
-generate_slurm_node_conf_file $RESERVATION_ID /etc/slurm-llnl/hosts.conf
+generate_slurm_node_conf_file $RESERVATION_ID /etc/slurm-llnl/nodes.conf
 sleep_while_pending $RESERVATION_ID
