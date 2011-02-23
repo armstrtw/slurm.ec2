@@ -46,9 +46,8 @@ generate_slurm_node_conf_file() {
     local OUT_FILE=$2
     local NODE_COUNT=`get_max_launch_index $RESERVATION_ID`
     local i
-    rm -f $OUT_FILE
 
-    echo "NodeName=node[0-$NODE_COUNT]" >> $OUT_FILE
+    echo "NodeName=node[0-$NODE_COUNT]" > $OUT_FILE
     echo "PartitionName=prod Nodes=node[0-$NODE_COUNT] Default=YES MaxTime=INFINITE State=UP" >> $OUT_FILE
 }
 
