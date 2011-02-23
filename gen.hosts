@@ -38,17 +38,24 @@ generate_hosts_file() {
 
     get_hosts_for_reservation $RESERVATION_ID $SCRATCH
     cat $SCRATCH|awk -v ip4=$HOST_IP -v launch_index=$LAUNCH_INDEX 'BEGIN {print "127.0.0.1 localhost"; print "127.0.0.1 node" launch_index;}{ if($8!=launch_index) {print $18" node"$8;}}' > $OUT_FILE
-    #rm $SCRATCH
+    rm $SCRATCH
 }
 
 generate_slurm_node_conf_file() {
     local RESERVATION_ID=$1
     local OUT_FILE=$2
     local NODE_COUNT=`get_max_launch_index $RESERVATION_ID`
-    local i
+    local SCRATCH=`mktemp`
+    get_hosts_for_reservation $RESERVATION_ID $SCRATCH
+    cat $SCRATCH|awk '{gsub(/\..*$/,"",$5); print "NodeName=node"$8" NodeAddr="$5}' > $OUT_FILE
+    rm -f $SCRATCH
 
-    echo "NodeName=node[0-$NODE_COUNT]" > $OUT_FILE
-    echo "PartitionName=prod Nodes=node[0-$NODE_COUNT] Default=YES MaxTime=INFINITE State=UP" >> $OUT_FILE
+    if [ $NODE_COUNT -gt 0 ]
+    then
+        echo "PartitionName=prod Nodes=node[0-$NODE_COUNT] Default=YES MaxTime=INFINITE State=UP" >> $OUT_FILE;
+    else
+        echo "PartitionName=prod Nodes=node0 Default=YES MaxTime=INFINITE State=UP" >> $OUT_FILE;
+    fi
 }
 
 HOST_IP=`wget -q -O - http://169.254.169.254/latest/meta-data/local-ipv4`
