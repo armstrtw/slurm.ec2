@@ -1,16 +1,17 @@
-#!/bin/bash
+#!/bin/bash -x
 
 get_hosts_for_reservation() {
-    local RESERVATION_ID=$1
+    local EC2_DATA=$1
     local OUT_FILE=$2
+    local RESERVATION_ID=`wget -q -O - http://169.254.169.254/latest/meta-data/reservation-id`
     # collect instances in our reservation
     # by collecting the lines starting w/ our RESERVATION_ID and
     # the next occurance of the token 'RESERVATION'
-    ec2din --show-empty-fields|sed -n "/$RESERVATION_ID/,/RESERVATION/p"|grep INSTANCE > $OUT_FILE
+    sed -n "/$RESERVATION_ID/,/RESERVATION/p" $EC2_DATA |grep INSTANCE > $OUT_FILE
 }
 
 sleep_while_pending() {
-    local RESERVATION_ID=$1
+    local RESERVATION_ID=`wget -q -O - http://169.254.169.254/latest/meta-data/reservation-id`
     printf "waiting for other hosts to boot."
     while [ ! `ec2din|sed -n "/$RESERVATION_ID/,/RESERVATION/p"|grep INSTANCE|grep pending|wc -l` -eq 0 ]; do
         printf "."
@@ -20,35 +21,51 @@ sleep_while_pending() {
 }
 
 get_max_launch_index() {
-    local RESERVATION_ID=$1
-    local ans
+    local EC2_DATA=$1
     local SCRATCH=`mktemp`
-    get_hosts_for_reservation $RESERVATION_ID $SCRATCH
-    NC=`awk 'BEGIN { mv = 0 }{for(i=1; i <= NR; i++) if($8 > mv) { mv = $8 } } END { print mv }' $SCRATCH`
+    get_hosts_for_reservation $EC2_DATA $SCRATCH
+    NC=`awk 'BEGIN { mv = 0 }{if($8 > mv) { mv = $8 } } END { print mv }' $SCRATCH`
     rm $SCRATCH
     echo $NC
 }
 
+get_control_node() {
+    local EC2_DATA=$1
+    local SCRATCH=`mktemp`
+    get_hosts_for_reservation $EC2_DATA $SCRATCH
+    CONTROL_NODE=`awk '{if($8 == 0) { gsub(/\..*$/,"",$5); print $5 } }' $SCRATCH`
+    rm $SCRATCH
+    echo $CONTROL_NODE
+}
+
 generate_hosts_file() {
-    local RESERVATION_ID=$1
+    local EC2_DATA=$1
     local OUT_FILE=$2
+    local RESERVATION_ID=`wget -q -O - http://169.254.169.254/latest/meta-data/reservation-id`
     local HOST_IP=`wget -q -O - http://169.254.169.254/latest/meta-data/local-ipv4`
     local HOST_NAME=`wget -q -O - http://169.254.169.254/latest/meta-data/local-hostname|cut -d. -f1`
     local SCRATCH=`mktemp`
 
-    get_hosts_for_reservation $RESERVATION_ID $SCRATCH
+    get_hosts_for_reservation $EC2_DATA $SCRATCH
     sed -i "/$HOST_NAME/d" $SCRATCH
     cat $SCRATCH|awk -v host_name=$HOST_NAME 'BEGIN {print "127.0.0.1 localhost"; print "127.0.0.1 " host_name;}{ gsub(/\..*$/,"",$5); print $18" "$5;}' > $OUT_FILE
     rm $SCRATCH
 }
 
+set_slurm_controller() {
+    local EC2_DATA=$1
+    local SLURM_CONF_FILE=$2
+    local CONTROL_NODE=`get_control_node $EC2_DATA`
+    sed -i "s/ControlMachine.*$/ControlMachine=$CONTROL_NODE/g" $SLURM_CONF_FILE
+}
+
 generate_slurm_node_conf_file() {
-    local RESERVATION_ID=$1
+    local EC2_DATA=$1
     local OUT_FILE=$2
-    local NODE_COUNT=`get_max_launch_index $RESERVATION_ID`
+    local NODE_COUNT=`get_max_launch_index $EC2_DATA`
     local SCRATCH=`mktemp`
-    get_hosts_for_reservation $RESERVATION_ID $SCRATCH
-    cat $SCRATCH|awk '{gsub(/\..*$/,"",$5); print "NodeName=node"$8" NodeAddr="$5}' > $OUT_FILE
+    get_hosts_for_reservation $EC2_DATA $SCRATCH
+    cat $SCRATCH|awk '{gsub(/\..*$/,"",$5); print "NodeName=node"$8" NodeHostname="$5" NodeAddr="$5}' > $OUT_FILE
     rm -f $SCRATCH
 
     if [ $NODE_COUNT -gt 0 ]
@@ -62,8 +79,10 @@ generate_slurm_node_conf_file() {
 export EC2_PRIVATE_KEY=/var/lib/aws/pk-RZX4OPVEF3E3L3KQKOZYJJ5WJMAHFS3Y.pem
 export EC2_CERT=/var/lib/aws/cert-RZX4OPVEF3E3L3KQKOZYJJ5WJMAHFS3Y.pem
 
-RESERVATION_ID=`wget -q -O - http://169.254.169.254/latest/meta-data/reservation-id`
-
-generate_hosts_file $RESERVATION_ID /etc/hosts
-generate_slurm_node_conf_file $RESERVATION_ID /etc/slurm-llnl/nodes.conf
-sleep_while_pending $RESERVATION_ID
+EC2_DATA=`mktemp`
+ec2din --show-empty-fields > $EC2_DATA
+generate_hosts_file $EC2_DATA /etc/hosts
+set_slurm_controller $EC2_DATA /etc/slurm-llnl/slurm.conf
+generate_slurm_node_conf_file $EC2_DATA /etc/slurm-llnl/nodes.conf
+rm -f $EC2_DATA
+sleep_while_pending
