@@ -31,13 +31,14 @@ get_max_launch_index() {
 
 generate_hosts_file() {
     local RESERVATION_ID=$1
-    local HOST_IP=$2
-    local LAUNCH_INDEX=$3
-    local OUT_FILE=$4
+    local OUT_FILE=$2
+    local HOST_IP=`wget -q -O - http://169.254.169.254/latest/meta-data/local-ipv4`
+    local HOST_NAME=`wget -q -O - http://169.254.169.254/latest/meta-data/local-hostname|cut -d. -f1`
     local SCRATCH=`mktemp`
 
     get_hosts_for_reservation $RESERVATION_ID $SCRATCH
-    cat $SCRATCH|awk -v ip4=$HOST_IP -v launch_index=$LAUNCH_INDEX 'BEGIN {print "127.0.0.1 localhost"; print "127.0.0.1 node" launch_index;}{ if($8!=launch_index) {print $18" node"$8;}}' > $OUT_FILE
+    sed -i "/$HOST_NAME/d" $SCRATCH
+    cat $SCRATCH|awk -v host_name=$HOST_NAME 'BEGIN {print "127.0.0.1 localhost"; print "127.0.0.1 " host_name;}{ gsub(/\..*$/,"",$5); print $18" "$5;}' > $OUT_FILE
     rm $SCRATCH
 }
 
@@ -58,15 +59,11 @@ generate_slurm_node_conf_file() {
     fi
 }
 
-HOST_IP=`wget -q -O - http://169.254.169.254/latest/meta-data/local-ipv4`
-LAUNCH_INDEX=`wget -q -O - http://169.254.169.254/latest/meta-data/ami-launch-index`
+export EC2_PRIVATE_KEY=/var/lib/aws/pk-RZX4OPVEF3E3L3KQKOZYJJ5WJMAHFS3Y.pem
+export EC2_CERT=/var/lib/aws/cert-RZX4OPVEF3E3L3KQKOZYJJ5WJMAHFS3Y.pem
+
 RESERVATION_ID=`wget -q -O - http://169.254.169.254/latest/meta-data/reservation-id`
 
-# test values
-# HOST_IP=10.117.43.46
-# LAUNCH_INDEX=0
-# RESERVATION_ID=r-4c8d2b21
-
-generate_hosts_file $RESERVATION_ID $HOST_IP $LAUNCH_INDEX /etc/hosts
+generate_hosts_file $RESERVATION_ID /etc/hosts
 generate_slurm_node_conf_file $RESERVATION_ID /etc/slurm-llnl/nodes.conf
 sleep_while_pending $RESERVATION_ID
