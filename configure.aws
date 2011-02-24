@@ -17,9 +17,11 @@ get_hosts_for_reservation() {
 }
 
 sleep_while_pending() {
+    local EC2_PRIVATE_KEY=$1
+    local EC2_CERT=$2
     local RESERVATION_ID=`wget -q -O - http://$AWS_MAGIC_IP/latest/meta-data/reservation-id`
     printf "waiting for other hosts to boot."
-    while [ ! `ec2din|sed -n "/$RESERVATION_ID/,/RESERVATION/p"|grep INSTANCE|grep pending|wc -l` -eq 0 ]; do
+    while [ ! `ec2din -K $EC2_PRIVATE_KEY -C $EC2_CERT|sed -n "/$RESERVATION_ID/,/RESERVATION/p"|grep INSTANCE|grep pending|wc -l` -eq 0 ]; do
         printf "."
         sleep 5
     done
@@ -82,30 +84,16 @@ generate_slurm_node_conf_file() {
     fi
 }
 
-main() {
+configure_aws() {
     local EC2_PRIVATE_KEY=$1
     local EC2_CERT=$2
     local SLURM_CONF=$3
     local NODES_CONF=$4
-
-    EC2_DATA=`mktemp`
-    ec2din --show-empty-fields > $EC2_DATA
+    local EC2_DATA=`mktemp`
+    ec2din -K $EC2_PRIVATE_KEY -C $EC2_CERT --show-empty-fields > $EC2_DATA
     generate_hosts_file $EC2_DATA /etc/hosts
     set_slurm_controller $EC2_DATA $SLURM_CONF
     generate_slurm_node_conf_file $EC2_DATA $NODES_CONF
     rm -f $EC2_DATA
-    sleep_while_pending
+    sleep_while_pending $EC2_PRIVATE_KEY $EC2_CERT
 }
-
-if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ] || [ -z "$4" ]
-then
-    print_usage
-    exit 1
-fi
-
-EC2_PRIVATE_KEY=$1
-EC2_CERT=$2
-SLURM_CONF=$3
-NODES_CONF=$4
-
-main $EC2_PRIVATE_KEY $EC2_CERT $SLURM_CONF $NODES_CONF
