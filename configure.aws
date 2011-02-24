@@ -1,5 +1,11 @@
 #!/bin/bash -x
 
+export AWS_MAGIC_IP=169.254.169.254
+
+print_usage() {
+    echo "USAGE: configure.aws EC2_PRIVATE_KEY EC2_CERT SLURM_CONF NODES_CONF"
+}
+
 get_hosts_for_reservation() {
     local EC2_DATA=$1
     local OUT_FILE=$2
@@ -76,14 +82,30 @@ generate_slurm_node_conf_file() {
     fi
 }
 
-export EC2_PRIVATE_KEY=/var/lib/aws/pk-RZX4OPVEF3E3L3KQKOZYJJ5WJMAHFS3Y.pem
-export EC2_CERT=/var/lib/aws/cert-RZX4OPVEF3E3L3KQKOZYJJ5WJMAHFS3Y.pem
-export AWS_MAGIC_IP=169.254.169.254
+main() {
+    local EC2_PRIVATE_KEY=$1
+    local EC2_CERT=$2
+    local SLURM_CONF=$3
+    local NODES_CONF=$4
 
-EC2_DATA=`mktemp`
-ec2din --show-empty-fields > $EC2_DATA
-generate_hosts_file $EC2_DATA /etc/hosts
-set_slurm_controller $EC2_DATA /etc/slurm-llnl/slurm.conf
-generate_slurm_node_conf_file $EC2_DATA /etc/slurm-llnl/nodes.conf
-rm -f $EC2_DATA
-sleep_while_pending
+    EC2_DATA=`mktemp`
+    ec2din --show-empty-fields > $EC2_DATA
+    generate_hosts_file $EC2_DATA /etc/hosts
+    set_slurm_controller $EC2_DATA $SLURM_CONF
+    generate_slurm_node_conf_file $EC2_DATA $NODES_CONF
+    rm -f $EC2_DATA
+    sleep_while_pending
+}
+
+if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ] || [ -z "$4" ]
+then
+    print_usage
+    exit 1
+fi
+
+EC2_PRIVATE_KEY=$1
+EC2_CERT=$2
+SLURM_CONF=$3
+NODES_CONF=$4
+
+main $EC2_PRIVATE_KEY $EC2_CERT $SLURM_CONF $NODES_CONF
